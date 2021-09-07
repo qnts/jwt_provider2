@@ -67,4 +67,4 @@ jwt_request.register_middleware('logger', logger)
 
 # these middleware will always run
 # but you need to decorate http method with @jwt_request.middlewares()
-jwt_request.middleware_always('logger')
+# jwt_request.middleware_always('logger')

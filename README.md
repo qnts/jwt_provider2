@@ -1,164 +1,278 @@
-# jwt_provider
+# JWT Provider v2
 
-This module is meant for developers, building endpoints for web and mobile app.
+This module is a completely rework of the original `jwt_provider`, with a nice and cleaner codebase for developers to easily implement into their app.
 
-Currently supports odoo `11.0` `12.0` and the latest `13.0`.
+**Please note** that this version is only compatible with **odoo `14`**
 
-**Attention**: There is a break change in `13.0`, see the **Installation** section.
+**Hey there**, I need help fixing/completing the readme. If there are confusions, please do not hesitate to open an issue. Pull requests are welcome, too!
 
-## Prerequisites
+## Prerequisites and Installation
 
-This module require `pyjwt` and `simplejson` to be installed. Run:
-
-```bash
-pip3 install pyjwt
-pip3 install simplejson
-```
-
-If you run odoo in docker, remember to login to bash in docker container and run the above command.
-
-## Installation
+This module requires `pyjwt` and `simplejson` to be installed. See `requirements.txt`.
 
 Download or clone this repo and move it to odoo addons dir. Install it via odoo just like a normal module.
 
-Version 13: now will get secret key from os ENV, using `os.environ.get('ODOO_JWT_KEY')`.
+## Environment
 
-- If you're running odoo locally (or inside a docker container), run `EXPORT ODOO_JWT_KEY="your_key"`.
+By default, `jwt_provider` uses the environment variable `ODOO_JWT_KEY` to hash jwt signature.
 
-- If using docker compose, add `ODOO_JWT_KEY=your_key` in `environment` section of yml file.
+## Implementation
 
-## Developer
+Full example, see `middlewares.py` and uncomment all routes in either `api_http.py` (for normal http request) or `api_json.py` (for json rpc) in `controllers`.
 
-Developers might need to verify jwt token inside private endpoints:
+### Jwt Auth
+
+To log a user in using (email, password):
 
 ```python
-http_method, body, headers, token = jwt_http.parse_request()
-result = validator.verify_token(token)
-if not result['status']:
-    return jwt_http.errcode(code=result['code'], message=result['message'])
+from odoo.http import request
+from ..JwtRequest import jwt_request
+
+@http.route()
+def login(self, email, password, *k, **kw):
+    token = jwt_request.login(email, password)
+    # access the logged in user via
+    #request.env.user
+    return jwt_request.response({
+        'token': token,
+        'user': request.env.user.read(['id']),
+    })
 ```
 
-## To Do
+To log a user in using user model:
 
-- Add an interface to store secret key (instead of hard-coding the key) and ability to pick a hashing algorithm (currently we use HMACSHA256).
-
-## Endpoints
-
-For private endpoints, include your jwt token in the header like this:
-
+```python
+token = jwt_request.create_token(user)
 ```
-Authorization: Bearer your_token
+
+To require valid jwt in private endpoint, we already registers a middleware `jwt` for us to authenticate user. Just add `jwt` to the middleware decorator:
+
+```python
+@http.route()
+@jwt_request.middlewares('jwt')
+def get_profile(self, *k, **kw):
+    ...
 ```
-1. Login
-  ```
-  POST /api/login
-  ```
-  Request payload:
-  ```
-  email=user@odoo.com&
-  password=password
-  ```
-  Response:
 
-  `400`: Incorect login
+### Middleware
 
-  `200`: OK
-  ```json
-  {
-    "data": {
-        "user": {
-            "id": 8,
-            "login": "user@odoo.com",
-            "company_id": [
-                1,
-                "My Company"
-            ],
-            "name": "John"
-        },
-        "token": "generated_token"
-    },
-    "success": true,
-    "message": null
-  }
-  ```
- 
-2. Register
-  ```
-  POST api/register
-  ```
-  Require: Free signup setting is ON (as well as enabled `auth_signup`).
+This version's shipped with a new feature: `middleware`.
 
-  On success, response an access token as well.
+> Middleware provide a convenient mechanism for inspecting and filtering HTTP requests entering your application. For example, Laravel includes a middleware that verifies the user of your application is authenticated. If the user is not authenticated, the middleware will redirect the user to your application's login screen. However, if the user is authenticated, the middleware will allow the request to proceed further into the application.
+>
+> *(from Laravel middleware documentation)*
 
-  Request payload:
-  ```
-  email=user@odoo.com&
-  password=password&
-  name=Your%sName
-  ```
-  Response:
+Okay, this is not laravel, but I had the idea of them and created my own middleware mechanism into this module.
 
-  `400`: User input invalid, message might be one of:
+#### Create your own middleware
 
-    Invalid email address
-    Name cannot be empty
-    Password cannot be empty
-    Email address already existed
+A middleware is a simple python function, given a `JwtRequest` instance, inside, we check if the request is valid or we raise a `MiddlewareException` to stop the execution and respond the error.
 
-  `501`: Signup is disabled
+Let's create a simple middleware named `api_key_middleware`, we only allow request with correct api key provided in the request header `X-Api-Key`, otherwise we respond immediately by raising a `MiddlewareException`:
 
-  `200`: OK
-  ```json
-  {
-    "data": {
-        "user": {
-            "id": 8,
-            "login": "user@odoo.com",
-            "company_id": [
-                1,
-                "My Company"
-            ],
-            "name": "John"
-        },
-        "token": "generated_token"
-    },
-    "success": true,
-    "message": null
-  }
-  ```
+```python
+from odoo.addons.jwt_provider2.middleware.MiddlewareData import MiddlewareData
+from odoo.addons.jwt_provider2.middleware.MiddlewareException import MiddlewareException
+from odoo.addons.jwt_provider2.JwtRequest import jwt_request
 
-3. My profile
-  ```
-  ANY /api/me
-  ```
-  Response:
 
-  `498`: Token invalid or expired
+def api_key_middleware(req: JwtRequest, data: MiddlewareData, *k, **kw):
+    # get api key from headers, note: header keys are always capitalized
+    api_key = req.headers.get('X-Api-Key')
+    # here we should check for api key (from db, ...)
+    if api_key != 'secret':
+        raise MiddlewareException('Invalid Api Key', 400, 'invalid_api_key')
+    # store data to jwt_request
+    data.set('key_info', {
+        'client': 'some client name',
+        'expiry': '2025-01-01',
+    })
 
-  `200`: OK, return user object
-  ```json
-  {
-    "data": null,
-    "success": {
-        "company_id": [
-            1,
-            "My Company"
-        ],
-        "avatar": "http://yourwebsite.com/web/avatar/8",
-        "name": "Join",
-        "id": 8,
-        "email": "user@odoo.com"
-    },
-    "message": null
-  }
-  ```
+# aliasing middleware
+jwt_request.register_middleware('api_key', api_key_middleware)
+```
 
-4. Logout
-  ```
-  ANY /api/logout
-  ```
-  Response:
+As you can see, in the above code, once you have the middleware definition, we alias it with a name `api_key`:
 
-  `498`: Token invalid or expired
+```python
+jwt_request.register_middleware('api_key', api_key_middleware)
+```
 
-  `200`: OK, log the user out
+#### Applying middleware
+
+Next, create a controller method and decorate it:
+
+```python
+from odoo import http
+from odoo.addons.jwt_provider2.JwtRequest import jwt_request
+
+
+class TestController(http.Controller):
+
+    @http.route('/api/hello', type='http', auth='public', csrf=False, cors='*')
+    # decorate middleware
+    @jwt_request.middlewares('api_key')
+    def hello(self, **kw):
+        return jwt_request.response({ 'message': 'hello!', 'key_info': jwt_request.data.get('key_info') })
+```
+
+Now when we make a http request to `api/hello`, with no `X-Api-Key` header or invalid one, we should see a response like:
+
+```json
+{
+    "message": "Invalid Api Key",
+    "type": "invalid_api_key",
+    "code": 400
+}
+```
+
+And when we set the header `X-Api-Key`'s value to `secret`, make a request again, and voila!
+
+```json
+{
+    "message": "hello!",
+    "key_info": {
+        "client": "some client name",
+        "expiry": "2025-01-01"
+    }
+}
+```
+
+We don't need to register a middleware function. Instead, we can add it directly to the decorator `@jwt_request.middlewares()`:
+
+```python
+from ....
+
+
+def api_key_middleware(req: JwtRequest, data: MiddlewareData, *k, **kw):
+    ...
+
+
+class TestController(http.Controller):
+    @http.route('/api/hello', type='http', auth='public', csrf=False, cors='*')
+    # decorate middleware
+    @jwt_request.middlewares(api_key_middleware)
+    def hello(self, **kw):
+        ...
+```
+
+And yes, we can requires as many as middlewares we want:
+
+```python
+@jwt_request.middlewares(
+  'api_key',
+  group_check(['base.group_user']),
+  ('age_check', 18),
+)
+```
+
+Open `middlewares.py`, we already have some examples to write middleware. And uncomment some example endpoints in either `controllers/api_http.py` or `controllers/api_json.py`.
+
+#### Passing and sharing data between middlewares
+
+A middleware function signature is as follow:
+
+```python
+def my_middleware(req: JwtRequest, data: MiddlewareData, *kargs, **kwargs):
+    ...
+```
+
+Let's take a look on the function `require_groups` in `middlewares.py`:
+
+```python
+def require_groups(groups=[]):
+    def handler(req: JwtRequest, *k, **kw):
+        # first need to be authenticated
+        req.exec_middleware('jwt')
+        # then check groups
+        for group in groups:
+            if req.odoo_req.env.user.has_group(group):
+                req.next()
+                return
+        raise MiddlewareException('Insufficient privilege', 403, 'no_privilege')
+    return handler
+```
+
+It returns a middleware function, this tells us how to put it to the middleware decorator:
+
+```python
+@http.route(...)
+@jwt_request.middlewares(require_groups(['base.group_system']))
+def get_admin_privilege(self, *kargs, **kwargs):
+    ...
+```
+
+Here we actually wrap the middleware function, passing the data `['base.group_system']` into its logic body:
+
+- First, it check if user is already logged in via `jwt`
+- Next, `req.odoo_req` is a reference to `odoo.http.request`, get the logged in user, and check if user has any group in `['base.group_system']`.
+
+- Finally, if at least one group satisfies, process to the next middleware by calling `return`. Else, just raise an exception to stop the request (and respond an error).
+
+To share data between middlewares, we can use the param `data`:
+
+```python
+from datetime import date
+
+def api_key_middleware(req: JwtRequest, data: MiddlewareData, *k, **kw):
+    ...
+    # store data to jwt_request
+    data.set('key_info', {
+        'client': 'some client name',
+        'expiry': date(2021, 12, 31),
+    })
+
+def api_key_valid(req: JwtRequest, data: MiddlewareData, *k, **kw):
+    info = data.get('key_info', {})
+    now = date.today()
+    # check if key is not expired
+    if info.get('expiry') < now:
+        raise MiddlewareException()
+
+# controller
+# `api_key_valid` must be called after `api_key_middleware`.
+@http.route()
+@jwt_request.middlewares(api_key_middleware, api_key_valid)
+def action(self, *kargs, **kwargs):
+    ...
+```
+
+#### Global middleware
+
+Global middlewares always run before normal ones when you decorate controller route with `@jwt_request.middlewares()` (empty param is ok).
+
+Examples of global middlewares IRL:
+
+- every request to our routes must provide a valid api key
+- log request and response to routes
+
+To register global middleware, call:
+
+```python
+jwt_request.middleware_always('logger')
+jwt_request.middleware_always(api_key_middleware)
+
+
+@http.route()
+# will run middlewares in the following order:
+# logger -> api_key_middleware -> jwt
+@jwt_request.middlewares('jwt')
+def action(self, *kargs, **kwargs):
+    ...
+```
+
+Run middleware without global ones? Use:
+
+```python
+@jwt_request.pure_middlewares(...)
+```
+
+### JwtRequest class
+
+`JwtRequest` comes with a nice `response` method, that auto detects the request type (http or json rpc) and responds the correct one for us.
+
+Documentation coming soon.
+
+### Implement your own jwt auth
+
+Coming soon.
