@@ -54,7 +54,7 @@ def api_key_middleware(req: JwtRequest, data: MiddlewareData, *k, **kw):
 jwt_request.register_middleware('api_key', api_key_middleware)
 ```
 
-> :warning: From the rest of the documentation, we use relative imports to demonstrate.
+> :warning: For the rest of the documentation, we use relative imports in code blocks to demonstrate.
 >
 > If you want to import `jwt_provider2`'s modules from other addons, use `odoo.addons.jwt_provider2` as base.
 >
