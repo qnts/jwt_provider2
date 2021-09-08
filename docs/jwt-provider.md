@@ -23,7 +23,7 @@ To log a user in using user model:
 token = jwt_request.create_token(user)
 ```
 
-To require valid jwt in private endpoint, we already registers a middleware `jwt` for us to authenticate user. Just add `jwt` to the middleware decorator:
+To require valid jwt in private endpoint, we already registers a middleware `jwt` for you to authenticate user. Just add `jwt` to the middleware decorator:
 
 ```python
 @http.route()
