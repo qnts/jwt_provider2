@@ -6,7 +6,7 @@ This version's shipped with a new feature: `middleware`.
 >
 > *(from Laravel middleware documentation)*
 
-Okay, this is not laravel, but we had the idea of them and created own own middleware mechanism into this module.
+Okay, this is not laravel, but we had the idea of them and created our own middleware mechanism into this module.
 
 ![](concept.png?raw=true)
 
