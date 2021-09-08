@@ -167,7 +167,7 @@ def get_admin_privilege(self, *kargs, **kwargs):
     ...
 ```
 
-Here we actually wrap the middleware function, passing the data `['base.group_system']` into its logic body:
+Here we actually wrap the middleware function, passing the data `['base.group_system']` into its code logic:
 
 - First, it check if user is already logged in via `jwt`
 - Next, `req.odoo_req` is a reference to `odoo.http.request`, get the logged in user, and check if user has any group in `['base.group_system']`.
@@ -278,3 +278,99 @@ def route_b(*k, **kw):
 ```
 
 Here we learned that, to execute a middleware, we use `req.exec_middleware`. The param pass to `req.exec_middleware` may be an alias, a function, or a tuple, just like how we call `@jwt_request.middlewares`.
+
+## Middleware exception and response
+
+There are several ways to stop the request and respond the result while executing middleware logic:
+
+- Raise an exception
+- Return a Response directly
+
+With `raise MiddlewareException('some error message', 400, 'unauthorized')`, our JwtRequest will respond with the following json data:
+
+```json
+// as json RPC
+{
+    "result": {
+        "code": 400,
+        "message": "some error message",
+        "type": "unauthorized"
+    }
+}
+
+// as http request, with an http status code of 400
+{
+    "code": 400,
+    "message": "some error message",
+    "type": "unauthorized"
+}
+```
+
+We can return a response directly in middleware:
+
+```python
+def some_middleware(req: JwtRequest, *k, **kw):
+    return req.response({
+        'error': True,
+        'message': 'some error message',
+    }, status=404)
+```
+
+Want consistent response structure from every middleware error? Create a custom exception, with a `response` method:
+
+```python
+import .JwtRequest from jwt_request
+
+# you should always raise this exception in your middleware's code logic
+class MyAppExcetion(Exception):
+    def __init__(self, message=None, status_code=500):
+        self.message = message
+        self.status_code = status_code
+
+    def response(self):
+        return jwt_request.response({
+            'message': self.message,
+        }, status=self.status_code)
+
+# middleware raise
+def my_middleware(req: JwtRequest, *k, **kw):
+    raise MyAppException('something went wrong', 500)
+    # or
+    return jwt_request.response('something went wrong', 500)
+```
+
+Don't want our built-in `jwt_request.response()`? Create a custom response method, and an Exception like above (but use your new method).
+
+For the response, you should determine which one is suitable for either Json RPC or http request. Simply, a Json RPC is a request which contains header `Content-Type: application/json`. You get to know this because you are the one who writes endpoint. But, to simplify in some cases you want to change a request type from one to another, without touching much to the response, wrap every case of request in a single response function, with the help of `jwt_request.is_rpc()`.
+
+```python
+from odoo.http import Response
+import .JwtRequest from jwt_request
+from simplejson import dumps
+
+
+def my_response(data={}, status_code=200):
+    # is json rpc request
+    if jwt_request.is_rpc():
+        return {
+            'status_code': status_code,
+            'data': data,
+        }
+    # else, response for a http request
+    return Response(dumps(data), status=status_code, headers=[
+        ('Content-Type', 'application/json'),
+    ])
+
+# using my_response in your custom exception
+class MyAppExcetion(Exception):
+    def __init__(self, message=None, status_code=500):
+        self.message = message
+        self.status_code = status_code
+
+    def response(self):
+        return my_response({
+            'message': self.message,
+        }, status_code=self.status_code)
+```
+
+> **Attention:** Json RPC cannot respond a custom http status code as you want. They hard-coded in Odoo, unfortunately. They might change that in the future, who knows?
