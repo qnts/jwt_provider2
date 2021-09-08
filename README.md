@@ -66,7 +66,7 @@ Okay, this is not laravel, but we had the idea of them and created my own middle
 
 #### Create your own middleware
 
-A middleware is a simple python function, given a `JwtRequest` instance, inside, we check if the request is valid or we raise a `MiddlewareException` to stop the execution and respond the error.
+A middleware is a simple python function, given a `JwtRequest` instance, inside, it checks if the request is valid or it raises a `MiddlewareException` to stop the execution and respond the error.
 
 Let's create a simple middleware named `api_key_middleware`, we only allow request with correct api key provided in the request header `X-Api-Key`, otherwise we respond immediately by raising a `MiddlewareException`:
 
