@@ -4,7 +4,7 @@ This module is a completely rework of the original `jwt_provider`, with a nice a
 
 **Please note** that this version is only compatible with **odoo `14`**
 
-**Hey there**, I need help fixing/completing the readme. If there are confusions, please do not hesitate to open an issue. Pull requests are welcome, too!
+**Hey there**, We need help fixing/completing the readme. If there are confusions, please do not hesitate to open an issue. Pull requests are welcome, too!
 
 ## Prerequisites and Installation
 
@@ -62,7 +62,7 @@ This version's shipped with a new feature: `middleware`.
 >
 > *(from Laravel middleware documentation)*
 
-Okay, this is not laravel, but I had the idea of them and created my own middleware mechanism into this module.
+Okay, this is not laravel, but we had the idea of them and created my own middleware mechanism into this module.
 
 #### Create your own middleware
 
