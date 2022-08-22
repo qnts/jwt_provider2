@@ -12,6 +12,12 @@ Okay, this is not laravel, but we had the idea of them and created our own middl
 
 ## Creating middleware
 
+> :warning: For the rest of the documentation, we use relative imports in code blocks to demonstrate.
+>
+> If you want to import `jwt_provider2`'s modules from other addons, use `odoo.addons.jwt_provider2` as base.
+>
+> Example: `from odoo.addons.jwt_provider2.JwtRequest import jwt_request`
+
 A middleware is a simple python function, with the following signature:
 
 ```python
@@ -30,7 +36,7 @@ It checks if the request is valid or not, it raises a `MiddlewareException` to s
 - To **stop a middleware**, raise an `Exception`.
 - To **continue** to the next middleware/controller execution, do not return anything other than falsy value (`False`, `None`, ...).
 
-Let's create a simple middleware named `api_key_middleware`, we only allow request with correct api key provided in the request header `X-Api-Key`, otherwise we respond immediately by raising a `MiddlewareException`:
+Let's create a simple middleware named `api_key_middleware`, we only allow request with correct api key provided in the request header `X-Api-Key`, otherwise we respond with an error immediately by raising a `MiddlewareException`:
 
 ```python
 from .middleware.MiddlewareData import MiddlewareData
@@ -54,13 +60,7 @@ def api_key_middleware(req: JwtRequest, data: MiddlewareData, *k, **kw):
 jwt_request.register_middleware('api_key', api_key_middleware)
 ```
 
-> :warning: For the rest of the documentation, we use relative imports in code blocks to demonstrate.
->
-> If you want to import `jwt_provider2`'s modules from other addons, use `odoo.addons.jwt_provider2` as base.
->
-> Example: `from odoo.addons.jwt_provider2.JwtRequest import jwt_request`
-
-As you can see, in the above code, once you have the middleware definition, we alias it with a name `api_key`:
+As you can see, in the above code, once we have the middleware definition, we alias it with a name `api_key`:
 
 ```python
 jwt_request.register_middleware('api_key', api_key_middleware)
@@ -138,9 +138,9 @@ class TestController(http.Controller):
         ...
 ```
 
-## Passing and sharing data
+## Passing external data and sharing data among middlewares
 
-### Passing data
+### Passing external data to middleware
 
 Let's take a look on the function `require_groups` in `middlewares.py`:
 
@@ -158,7 +158,14 @@ def require_groups(groups=[]):
     return handler
 ```
 
-It returns a middleware function, this tells us how to put it to the middleware decorator:
+Here we actually wrap the middleware function (`def handler`), this handler can access the variable `groups`:
+
+- First, it check if user is already logged in via `jwt`
+- Next, `req.odoo_req` is a reference to `odoo.http.request`, get the logged in user, and check if user has any group in `['base.group_system']`.
+- Finally, if at least one group satisfies, process to the next middleware by calling `return`. Else, just raise an exception to stop the request (and respond an error).
+
+
+And finally in the controller method, we call the function like this:
 
 ```python
 @http.route(...)
@@ -167,16 +174,9 @@ def get_admin_privilege(self, *kargs, **kwargs):
     ...
 ```
 
-Here we actually wrap the middleware function, passing the data `['base.group_system']` into its code logic:
-
-- First, it check if user is already logged in via `jwt`
-- Next, `req.odoo_req` is a reference to `odoo.http.request`, get the logged in user, and check if user has any group in `['base.group_system']`.
-
-- Finally, if at least one group satisfies, process to the next middleware by calling `return`. Else, just raise an exception to stop the request (and respond an error).
-
 ### Sharing data
 
-A middleware may need to get data shared from previous middleware. We can use the param `data`:
+A middleware might need to get data shared from the revious middlewares. We can use the param `data`:
 
 ```python
 from datetime import date
@@ -239,7 +239,7 @@ Run middleware without global ones? Use:
 
 ## Grouping middleware
 
-Tired of using the same, multiple-middleware decorator each route?
+Tired of using the same, multiple-middleware decorator for every route?
 
 ```python
 @http.route()
@@ -277,7 +277,7 @@ def route_b(*k, **kw):
     pass
 ```
 
-Here we learned that, to execute a middleware, we use `req.exec_middleware`. The param pass to `req.exec_middleware` may be an alias, a function, or a tuple, just like how we call `@jwt_request.middlewares`.
+Here we learned that, to execute a middleware inside a middleware, we use `req.exec_middleware`. The param pass to `req.exec_middleware` may be an alias, a function, or a tuple, just like how we call `@jwt_request.middlewares`.
 
 ## Middleware exception and response
 
@@ -339,7 +339,7 @@ def my_middleware(req: JwtRequest, *k, **kw):
     return jwt_request.response('something went wrong', 500)
 ```
 
-Don't want our built-in `jwt_request.response()`? Create a custom response method, and an Exception like above (but use your new method).
+Don't want our built-in `jwt_request.response()`? Create a custom response method, and an Exception like above (but using your new method).
 
 For the response, you should determine which one is suitable for either Json RPC or http request. Simply, a Json RPC is a request which contains header `Content-Type: application/json`. You get to know this because you are the one who writes endpoint. But, to simplify in some cases you want to change a request type from one to another, without touching much to the response, wrap every case of request in a single response function, with the help of `jwt_request.is_rpc()`.
 
@@ -373,4 +373,4 @@ class MyAppExcetion(Exception):
         }, status_code=self.status_code)
 ```
 
-> **Attention:** Json RPC cannot respond a custom http status code as you want. They hard-coded in Odoo, unfortunately. They might change that in the future, who knows?
+> **Attention:** Json RPC cannot respond a custom http status code as you want. It is hard-coded in Odoo as 200, unfortunately. They might change that in the future, who knows?
